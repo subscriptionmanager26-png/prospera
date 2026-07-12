@@ -36,7 +36,7 @@ export default function LoginPanel() {
   return (
     <div className="login-shell">
       <div className="login-card">
-        <p className="eyebrow">SaffronAI Community</p>
+        <p className="eyebrow">Prospera</p>
         <h1>Slack archive</h1>
         <p className="login-copy">
           Sign in with your email. Access is limited to approved members.

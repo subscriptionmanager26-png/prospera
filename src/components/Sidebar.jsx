@@ -25,7 +25,7 @@ export default function Sidebar({
         <button type="button" className="workspace-btn" onClick={() => onSelectView('home')}>
           <span className="workspace-icon">S</span>
           <span className="workspace-title">
-            <strong>SaffronAI Community</strong>
+            <strong>Prospera</strong>
             <small>Slack archive</small>
           </span>
         </button>

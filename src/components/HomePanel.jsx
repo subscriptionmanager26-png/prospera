@@ -7,7 +7,7 @@ export default function HomePanel({ workspace, onOpenChannel }) {
     <div className="home-panel">
       <header className="home-hero">
         <p className="eyebrow">Read-only archive</p>
-        <h1>SaffronAI Community</h1>
+        <h1>Prospera</h1>
         <p className="subtitle">
           {stats.dateRange ? formatDateRange(stats.dateRange) : 'No message history yet'}
         </p>

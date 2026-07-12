@@ -1,6 +1,6 @@
-# SaffronAI Slack Archive
+# Prospera Slack Archive
 
-Private Slack export viewer for the SaffronAI Community.
+Private Slack export viewer for the Prospera community.
 
 ## Security model
 
