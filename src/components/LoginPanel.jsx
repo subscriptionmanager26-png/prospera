@@ -3,34 +3,57 @@ import { supabase } from '../lib/supabase'
 
 export default function LoginPanel() {
   const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [status, setStatus] = useState('idle')
   const [message, setMessage] = useState('')
 
   const onSubmit = async (event) => {
     event.preventDefault()
     const cleaned = email.trim().toLowerCase()
-    if (!cleaned) return
+    if (!cleaned || !password) return
 
     setStatus('loading')
     setMessage('')
 
-    const redirectTo = `${window.location.origin}/`
-    const { error } = await supabase.auth.signInWithOtp({
-      email: cleaned,
-      options: {
-        emailRedirectTo: redirectTo,
-        shouldCreateUser: true,
-      },
-    })
+    try {
+      const { data, error } = await supabase.functions.invoke('community-login', {
+        body: { email: cleaned, password },
+      })
 
-    if (error) {
+      if (error) {
+        setStatus('error')
+        setMessage(error.message || 'Login failed')
+        return
+      }
+
+      if (data?.error) {
+        setStatus('error')
+        setMessage(data.error)
+        return
+      }
+
+      if (!data?.access_token || !data?.refresh_token) {
+        setStatus('error')
+        setMessage('Login failed: no session returned')
+        return
+      }
+
+      const { error: sessionErr } = await supabase.auth.setSession({
+        access_token: data.access_token,
+        refresh_token: data.refresh_token,
+      })
+
+      if (sessionErr) {
+        setStatus('error')
+        setMessage(sessionErr.message)
+        return
+      }
+
+      setStatus('idle')
+    } catch (err) {
       setStatus('error')
-      setMessage(error.message)
-      return
+      setMessage(err instanceof Error ? err.message : 'Login failed')
     }
-
-    setStatus('sent')
-    setMessage(`Check ${cleaned} for a magic link. Only whitelisted emails can open the archive.`)
   }
 
   return (
@@ -39,29 +62,38 @@ export default function LoginPanel() {
         <p className="eyebrow">Prospera</p>
         <h1>Slack archive</h1>
         <p className="login-copy">
-          Sign in with your email. Access is limited to approved members.
+          Enter your email and the community password. Access is limited to approved members.
         </p>
 
-        {status === 'sent' ? (
-          <div className="login-success">{message}</div>
-        ) : (
-          <form className="login-form" onSubmit={onSubmit}>
-            <label htmlFor="email">Email</label>
-            <input
-              id="email"
-              type="email"
-              autoComplete="email"
-              placeholder="you@example.com"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              required
-              disabled={status === 'loading'}
-            />
-            <button type="submit" disabled={status === 'loading'}>
-              {status === 'loading' ? 'Sending…' : 'Send magic link'}
-            </button>
-          </form>
-        )}
+        <form className="login-form" onSubmit={onSubmit}>
+          <label htmlFor="email">Email</label>
+          <input
+            id="email"
+            type="email"
+            autoComplete="username"
+            placeholder="you@example.com"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            required
+            disabled={status === 'loading'}
+          />
+
+          <label htmlFor="password">Community password</label>
+          <input
+            id="password"
+            type="password"
+            autoComplete="current-password"
+            placeholder="Community password"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            required
+            disabled={status === 'loading'}
+          />
+
+          <button type="submit" disabled={status === 'loading'}>
+            {status === 'loading' ? 'Signing in…' : 'Sign in'}
+          </button>
+        </form>
 
         {status === 'error' && <p className="login-error">{message}</p>}
       </div>

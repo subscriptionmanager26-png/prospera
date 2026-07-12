@@ -4,13 +4,20 @@ Private Slack export viewer for the Prospera community.
 
 ## Security model
 
-- Magic-link email login via Supabase Auth
+- Email + shared community password (Edge Function `community-login`)
 - Access gated by `allowed_emails` (whitelist)
+- Passcode stored in `community_passcode` (service-role only)
 - Archive data lives in Supabase Postgres (not in this repo)
 - Optional private Storage bucket `slack-exports` for ZIP backups
 - Full-text search via Postgres `search_slack_messages`
 
 **Do not commit Slack export ZIPs, `data/`, or seed emails.**
+
+Change the community password in SQL:
+
+```sql
+update community_passcode set passcode = 'your-new-password', updated_at = now() where id = 1;
+```
 
 ## Environment
 
