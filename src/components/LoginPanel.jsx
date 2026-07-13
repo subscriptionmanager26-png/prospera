@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 
-export default function LoginPanel() {
+export default function LoginPanel({ onSignedIn }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [status, setStatus] = useState('idle')
@@ -38,7 +38,7 @@ export default function LoginPanel() {
         return
       }
 
-      const { error: sessionErr } = await supabase.auth.setSession({
+      const { data: sessionData, error: sessionErr } = await supabase.auth.setSession({
         access_token: data.access_token,
         refresh_token: data.refresh_token,
       })
@@ -49,7 +49,14 @@ export default function LoginPanel() {
         return
       }
 
-      setStatus('idle')
+      if (!sessionData?.session) {
+        setStatus('error')
+        setMessage('Login failed: session not established')
+        return
+      }
+
+      // Push session into App immediately — don't wait for onAuthStateChange
+      onSignedIn?.(sessionData.session)
     } catch (err) {
       setStatus('error')
       setMessage(err instanceof Error ? err.message : 'Login failed')

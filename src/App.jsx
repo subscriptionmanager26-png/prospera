@@ -7,7 +7,7 @@ import ThreadPanel from './components/ThreadPanel'
 import SearchPanel from './components/SearchPanel'
 import LoginPanel from './components/LoginPanel'
 import { supabase } from './lib/supabase'
-import { loadWorkspaceFromSupabase, loadChannelMessages, searchMessages } from './lib/workspaceApi'
+import { loadWorkspaceFromSupabase, loadChannelMessages, searchMessages, CHANNEL_PAGE_SIZE } from './lib/workspaceApi'
 import './index.css'
 
 export default function App() {
@@ -27,14 +27,27 @@ export default function App() {
   const [activeThreadTs, setActiveThreadTs] = useState(null)
 
   useEffect(() => {
+    let mounted = true
+
     supabase.auth.getSession().then(({ data }) => {
+      if (!mounted) return
       setSession(data.session)
       setAuthReady(true)
     })
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => {
+
+    const { data: sub } = supabase.auth.onAuthStateChange((event, next) => {
       setSession(next)
+      if (event === 'SIGNED_OUT') {
+        setWorkspace(null)
+        setAccessDenied('')
+        setError('')
+      }
     })
-    return () => sub.subscription.unsubscribe()
+
+    return () => {
+      mounted = false
+      sub.subscription.unsubscribe()
+    }
   }, [])
 
   const loadWorkspace = useCallback(async () => {
@@ -44,6 +57,7 @@ export default function App() {
     try {
       const ws = await loadWorkspaceFromSupabase()
       setWorkspace(ws)
+      setView('home')
       if (ws.conversations?.length > 0) {
         const general = ws.conversations.find(c => c.kind === 'general')
         setActiveConversationId(general?.id ?? ws.conversations[0].id)
@@ -67,8 +81,17 @@ export default function App() {
       setLoading(false)
       return
     }
-    loadWorkspace()
+    // Defer so setSession auth headers are fully applied before first RPC
+    const t = setTimeout(() => {
+      loadWorkspace()
+    }, 0)
+    return () => clearTimeout(t)
   }, [authReady, session?.access_token, loadWorkspace])
+
+  const handleSignedIn = useCallback((nextSession) => {
+    setSession(nextSession)
+    setAuthReady(true)
+  }, [])
 
   useEffect(() => {
     const q = globalSearch.trim()
@@ -172,7 +195,7 @@ export default function App() {
   }
 
   if (!session) {
-    return <LoginPanel />
+    return <LoginPanel onSignedIn={handleSignedIn} />
   }
 
   if (accessDenied) {
