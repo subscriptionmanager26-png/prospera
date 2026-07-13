@@ -1,7 +1,8 @@
 import { supabase } from './supabase'
 
 /**
- * Load workspace from Supabase (RLS-gated by allowlist).
+ * Load workspace metadata from Supabase (RLS-gated by allowlist).
+ * Messages are loaded per-channel via loadChannelMessages().
  */
 export async function loadWorkspaceFromSupabase() {
   const { data: allowed, error: allowErr } = await supabase
@@ -16,14 +17,21 @@ export async function loadWorkspaceFromSupabase() {
     throw err
   }
 
-  const [usersRes, channelsRes, messagesRes] = await Promise.all([
+  const [usersRes, channelsRes, countsRes] = await Promise.all([
     supabase.from('slack_users').select('id,name,real_name,display_name,email,avatar_72,is_admin,is_bot,deleted'),
     supabase.from('slack_channels').select('id,name,kind,topic,purpose,member_count,is_general'),
-    supabase.from('slack_messages').select('channel_id,channel_name,ts,thread_ts,user_id,display_name,avatar,text,subtype,reply_count,reactions,blocks,hidden,msg_ts').order('msg_ts', { ascending: true }),
+    supabase.rpc('channel_message_counts'),
   ])
 
-  for (const res of [usersRes, channelsRes, messagesRes]) {
-    if (res.error) throw new Error(res.error.message)
+  if (usersRes.error) throw new Error(usersRes.error.message)
+  if (channelsRes.error) throw new Error(channelsRes.error.message)
+
+  // Fallback if RPC missing: empty counts
+  const countMap = new Map()
+  if (!countsRes.error && countsRes.data) {
+    for (const row of countsRes.data) {
+      countMap.set(row.channel_id, Number(row.message_count) || 0)
+    }
   }
 
   const users = (usersRes.data || []).map(u => ({
@@ -42,10 +50,77 @@ export async function loadWorkspaceFromSupabase() {
   }))
 
   const userMap = new Map(users.map(u => [u.id, u]))
-  const messagesByChannel = {}
-  for (const m of messagesRes.data || []) {
+
+  const conversations = (channelsRes.data || []).map(ch => {
+    const messageCount = countMap.get(ch.id) || 0
+    return {
+      id: ch.id,
+      name: ch.name,
+      kind: ch.kind || (ch.is_general ? 'general' : 'channel'),
+      topic: ch.topic || '',
+      purpose: ch.purpose || '',
+      messages: [],
+      messagesLoaded: false,
+      messageCount,
+      memberCount: ch.member_count || 0,
+      dateRange: null,
+    }
+  })
+
+  conversations.sort((a, b) => {
+    if (a.kind === 'general') return -1
+    if (b.kind === 'general') return 1
+    return b.messageCount - a.messageCount || a.name.localeCompare(b.name)
+  })
+
+  const totalMessages = conversations.reduce((n, c) => n + c.messageCount, 0)
+
+  return {
+    users,
+    userMap,
+    channelMap: new Map(conversations.flatMap(c => [[c.id, c], [c.name, c]])),
+    conversations,
+    canvases: [],
+    dms: [],
+    mpims: [],
+    stats: {
+      userCount: users.length,
+      channelCount: conversations.length,
+      messageCount: totalMessages,
+      threadCount: 0,
+      hasMessages: totalMessages > 0,
+      dateRange: null,
+    },
+  }
+}
+
+/**
+ * Load all messages for one channel (paged under the hood past PostgREST 1000-row default).
+ */
+export async function loadChannelMessages(channelId) {
+  const pageSize = 1000
+  let from = 0
+  const rows = []
+
+  for (;;) {
+    const { data, error } = await supabase
+      .from('slack_messages')
+      .select('channel_id,channel_name,ts,thread_ts,user_id,display_name,avatar,text,subtype,reply_count,reactions,blocks,hidden,msg_ts')
+      .eq('channel_id', channelId)
+      .order('msg_ts', { ascending: true })
+      .range(from, from + pageSize - 1)
+
+    if (error) throw new Error(error.message)
+    const batch = data || []
+    rows.push(...batch)
+    if (batch.length < pageSize) break
+    from += pageSize
+  }
+
+  const messages = []
+  for (const m of rows) {
     if (m.hidden) continue
-    const msg = {
+    messages.push({
       type: 'message',
       ts: m.ts,
       thread_ts: m.thread_ts || undefined,
@@ -60,55 +135,10 @@ export async function loadWorkspaceFromSupabase() {
       displayName: m.display_name,
       avatar: m.avatar || '',
       timestamp: m.msg_ts,
-    }
-    if (!messagesByChannel[m.channel_name]) messagesByChannel[m.channel_name] = []
-    messagesByChannel[m.channel_name].push(msg)
+    })
   }
 
-  const conversations = (channelsRes.data || []).map(ch => {
-    const messages = messagesByChannel[ch.name] || []
-    return {
-      id: ch.id,
-      name: ch.name,
-      kind: ch.kind || (ch.is_general ? 'general' : 'channel'),
-      topic: ch.topic || '',
-      purpose: ch.purpose || '',
-      messages,
-      memberCount: ch.member_count || 0,
-      dateRange: dateRangeForMessages(messages),
-    }
-  })
-
-  conversations.sort((a, b) => {
-    if (a.kind === 'general') return -1
-    if (b.kind === 'general') return 1
-    return b.messages.length - a.messages.length || a.name.localeCompare(b.name)
-  })
-
-  const allMessages = conversations.flatMap(c => c.messages)
-  const threadParents = new Set(
-    allMessages
-      .filter(m => m.reply_count > 0 || allMessages.some(r => r.thread_ts === m.ts && r.ts !== m.ts))
-      .map(m => m.ts),
-  )
-
-  return {
-    users,
-    userMap,
-    channelMap: new Map(conversations.flatMap(c => [[c.id, c], [c.name, c]])),
-    conversations,
-    canvases: [],
-    dms: [],
-    mpims: [],
-    stats: {
-      userCount: users.length,
-      channelCount: conversations.length,
-      messageCount: allMessages.length,
-      threadCount: threadParents.size,
-      hasMessages: allMessages.length > 0,
-      dateRange: dateRangeForMessages(allMessages),
-    },
-  }
+  return messages
 }
 
 export async function searchMessages(query) {
@@ -126,11 +156,4 @@ export async function searchMessages(query) {
     avatar: m.avatar,
     timestamp: m.msg_ts,
   }))
-}
-
-function dateRangeForMessages(messages) {
-  if (!messages.length) return null
-  const min = Math.min(...messages.map(m => m.timestamp))
-  const max = Math.max(...messages.map(m => m.timestamp))
-  return { from: min, to: max }
 }

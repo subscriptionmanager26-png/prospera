@@ -7,7 +7,7 @@ import ThreadPanel from './components/ThreadPanel'
 import SearchPanel from './components/SearchPanel'
 import LoginPanel from './components/LoginPanel'
 import { supabase } from './lib/supabase'
-import { loadWorkspaceFromSupabase, searchMessages } from './lib/workspaceApi'
+import { loadWorkspaceFromSupabase, loadChannelMessages, searchMessages } from './lib/workspaceApi'
 import './index.css'
 
 export default function App() {
@@ -102,11 +102,42 @@ export default function App() {
     )
   }, [activeConversation, channelSearch])
 
-  const openChannel = useCallback((id) => {
+  const openChannel = useCallback(async (id) => {
     setActiveConversationId(id)
     setView('channel')
     setChannelSearch('')
     setActiveThreadTs(null)
+
+    setWorkspace(prev => {
+      if (!prev) return prev
+      const conv = prev.conversations.find(c => c.id === id)
+      if (!conv || conv.messagesLoaded) return prev
+      return prev
+    })
+
+    try {
+      const messages = await loadChannelMessages(id)
+      setWorkspace(prev => {
+        if (!prev) return prev
+        const conversations = prev.conversations.map(c => {
+          if (c.id !== id) return c
+          return {
+            ...c,
+            messages,
+            messagesLoaded: true,
+            messageCount: messages.length,
+            dateRange: dateRangeForMessages(messages),
+          }
+        })
+        return {
+          ...prev,
+          conversations,
+          channelMap: new Map(conversations.flatMap(c => [[c.id, c], [c.name, c]])),
+        }
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load channel')
+    }
   }, [])
 
   const activeThreadParent = useMemo(() => {
@@ -197,12 +228,16 @@ export default function App() {
                 search={channelSearch}
                 onSearchChange={setChannelSearch}
               />
-              <MessageList
-                messages={filteredMessages}
-                userMap={workspace.userMap}
-                activeThreadTs={activeThreadTs}
-                onOpenThread={setActiveThreadTs}
-              />
+              {!activeConversation.messagesLoaded ? (
+                <div className="boot">Loading messages…</div>
+              ) : (
+                <MessageList
+                  messages={filteredMessages}
+                  userMap={workspace.userMap}
+                  activeThreadTs={activeThreadTs}
+                  onOpenThread={setActiveThreadTs}
+                />
+              )}
             </div>
             {activeThreadParent && (
               <ThreadPanel
@@ -220,4 +255,11 @@ export default function App() {
       </main>
     </div>
   )
+}
+
+function dateRangeForMessages(messages) {
+  if (!messages.length) return null
+  const min = Math.min(...messages.map(m => m.timestamp))
+  const max = Math.max(...messages.map(m => m.timestamp))
+  return { from: min, to: max }
 }

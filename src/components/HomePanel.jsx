@@ -34,7 +34,7 @@ export default function HomePanel({ workspace, onOpenChannel }) {
                   <p className="channel-card-topic">{conv.topic || conv.purpose}</p>
                 )}
                 <div className="channel-card-meta">
-                  <span>{conv.messages.length.toLocaleString()} messages</span>
+                  <span>{(conv.messageCount || conv.messages.length).toLocaleString()} messages</span>
                   <span>{conv.dateRange ? formatDateRange(conv.dateRange) : '—'}</span>
                 </div>
               </button>
