@@ -25,6 +25,10 @@ export default function App() {
   const [searchResults, setSearchResults] = useState([])
   const [searchLoading, setSearchLoading] = useState(false)
   const [activeThreadTs, setActiveThreadTs] = useState(null)
+  const [loadingOlder, setLoadingOlder] = useState(false)
+  const [highlightTs, setHighlightTs] = useState(null)
+  const [channelSearchResults, setChannelSearchResults] = useState(null)
+  const [channelSearchLoading, setChannelSearchLoading] = useState(false)
 
   useEffect(() => {
     let mounted = true
@@ -110,6 +114,39 @@ export default function App() {
     return () => { cancelled = true; clearTimeout(t) }
   }, [globalSearch, view])
 
+  // Channel header search — full channel history on the server
+  useEffect(() => {
+    const q = channelSearch.trim()
+    if (!q || !activeConversationId || view !== 'channel') {
+      setChannelSearchResults(null)
+      return
+    }
+    let cancelled = false
+    setChannelSearchLoading(true)
+    const t = setTimeout(() => {
+      searchMessages(q, { channelId: activeConversationId })
+        .then((rows) => {
+          if (cancelled) return
+          setChannelSearchResults(rows.map(r => ({
+            type: 'message',
+            ts: r.ts,
+            thread_ts: r.thread_ts || undefined,
+            text: r.text || '',
+            displayName: r.displayName,
+            avatar: r.avatar || '',
+            timestamp: r.timestamp,
+            channel: r.channelId,
+            channelName: r.channelLabel,
+            reply_count: 0,
+            reactions: [],
+          })))
+        })
+        .catch((err) => { if (!cancelled) setError(err.message) })
+        .finally(() => { if (!cancelled) setChannelSearchLoading(false) })
+    }, 250)
+    return () => { cancelled = true; clearTimeout(t) }
+  }, [channelSearch, activeConversationId, view])
+
   const activeConversation = useMemo(
     () => workspace?.conversations.find(c => c.id === activeConversationId) ?? null,
     [workspace, activeConversationId],
@@ -117,24 +154,22 @@ export default function App() {
 
   const filteredMessages = useMemo(() => {
     if (!activeConversation) return []
-    const q = channelSearch.trim().toLowerCase()
-    if (!q) return activeConversation.messages
-    return activeConversation.messages.filter(m =>
-      (m.text || '').toLowerCase().includes(q)
-      || (m.displayName || '').toLowerCase().includes(q),
-    )
-  }, [activeConversation, channelSearch])
+    if (channelSearch.trim()) return channelSearchResults || []
+    return activeConversation.messages
+  }, [activeConversation, channelSearch, channelSearchResults])
 
   const openChannel = useCallback(async (id, options = {}) => {
     const aroundTs = options.aroundTs ?? null
     setActiveConversationId(id)
     setView('channel')
     setChannelSearch('')
+    setChannelSearchResults(null)
     setActiveThreadTs(options.threadTs || null)
+    setHighlightTs(options.ts ? String(options.ts) : null)
+    setLoadingOlder(false)
 
     setWorkspace(prev => {
       if (!prev) return prev
-      // Force reload when jumping from search (aroundTs) or first open
       if (aroundTs == null) {
         const conv = prev.conversations.find(c => c.id === id)
         if (conv?.messagesLoaded) return prev
@@ -142,7 +177,7 @@ export default function App() {
       return {
         ...prev,
         conversations: prev.conversations.map(c =>
-          c.id === id ? { ...c, messagesLoaded: false, messages: [] } : c,
+          c.id === id ? { ...c, messagesLoaded: false, messages: [], hasMoreOlder: false } : c,
         ),
       }
     })
@@ -157,6 +192,7 @@ export default function App() {
             ...c,
             messages,
             messagesLoaded: true,
+            hasMoreOlder: messages.length >= CHANNEL_PAGE_SIZE,
             messageCount: messages.length,
             dateRange: dateRangeForMessages(messages),
           }
@@ -172,9 +208,46 @@ export default function App() {
     }
   }, [])
 
+  const loadOlderMessages = useCallback(async () => {
+    if (!activeConversationId || loadingOlder) return
+    const conv = workspace?.conversations.find(c => c.id === activeConversationId)
+    if (!conv?.messages?.length || !conv.hasMoreOlder) return
+
+    const oldest = conv.messages.reduce((a, b) => (a.timestamp < b.timestamp ? a : b))
+    setLoadingOlder(true)
+    try {
+      const older = await loadChannelMessages(activeConversationId, { beforeTs: oldest.timestamp })
+      setWorkspace(prev => {
+        if (!prev) return prev
+        const conversations = prev.conversations.map(c => {
+          if (c.id !== activeConversationId) return c
+          const byTs = new Map()
+          for (const m of [...older, ...c.messages]) byTs.set(m.ts, m)
+          const merged = [...byTs.values()].sort((a, b) => a.timestamp - b.timestamp)
+          return {
+            ...c,
+            messages: merged,
+            hasMoreOlder: older.length >= CHANNEL_PAGE_SIZE,
+            dateRange: dateRangeForMessages(merged),
+          }
+        })
+        return {
+          ...prev,
+          conversations,
+          channelMap: new Map(conversations.flatMap(c => [[c.id, c], [c.name, c]])),
+        }
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load older messages')
+    } finally {
+      setLoadingOlder(false)
+    }
+  }, [activeConversationId, loadingOlder, workspace])
+
   const openSearchResult = useCallback((msg) => {
     openChannel(msg.channelId, {
       aroundTs: msg.timestamp,
+      ts: msg.ts,
       threadTs: msg.thread_ts && msg.thread_ts !== msg.ts ? msg.thread_ts : null,
     })
   }, [openChannel])
@@ -267,14 +340,21 @@ export default function App() {
                 search={channelSearch}
                 onSearchChange={setChannelSearch}
               />
-              {!activeConversation.messagesLoaded ? (
+              {!activeConversation.messagesLoaded && !channelSearch.trim() ? (
                 <div className="boot">Loading messages…</div>
+              ) : channelSearch.trim() && channelSearchLoading ? (
+                <div className="boot">Searching channel…</div>
               ) : (
                 <MessageList
                   messages={filteredMessages}
                   userMap={workspace.userMap}
                   activeThreadTs={activeThreadTs}
                   onOpenThread={setActiveThreadTs}
+                  hasMoreOlder={!channelSearch.trim() && !!activeConversation.hasMoreOlder}
+                  loadingOlder={loadingOlder}
+                  onLoadOlder={loadOlderMessages}
+                  scrollToBottomToken={`${activeConversation.id}-${activeConversation.messagesLoaded}`}
+                  highlightTs={highlightTs}
                 />
               )}
             </div>

@@ -1,6 +1,6 @@
 import { supabase } from './supabase'
 
-const CHANNEL_PAGE_SIZE = 60
+export const CHANNEL_PAGE_SIZE = 60
 
 function mapMessage(m) {
   return {
@@ -65,6 +65,7 @@ export async function loadWorkspaceFromSupabase() {
     purpose: ch.purpose || '',
     messages: [],
     messagesLoaded: false,
+    hasMoreOlder: false,
     messageCount: null,
     memberCount: ch.member_count || 0,
     dateRange: null,
@@ -98,14 +99,17 @@ export async function loadWorkspaceFromSupabase() {
 }
 
 /**
- * Load only the latest 60 messages for a channel.
- * Pass aroundTs (from search) to load 60 messages around that point instead.
+ * Load a page of channel messages.
+ * - default: latest 60
+ * - aroundTs: ~60 around a search hit
+ * - beforeTs: 60 older than that timestamp (scroll up)
  */
-export async function loadChannelMessages(channelId, { aroundTs } = {}) {
+export async function loadChannelMessages(channelId, { aroundTs, beforeTs } = {}) {
   const { data, error } = await supabase.rpc('get_channel_messages', {
     p_channel_id: channelId,
     p_limit: CHANNEL_PAGE_SIZE,
     p_around_ts: aroundTs ?? null,
+    p_before_ts: beforeTs ?? null,
   })
 
   if (error) throw new Error(error.message)
@@ -113,12 +117,16 @@ export async function loadChannelMessages(channelId, { aroundTs } = {}) {
 }
 
 /**
- * Full-text search across the archive (server-side).
+ * Full-text (+ substring) search across the archive.
  */
-export async function searchMessages(query) {
+export async function searchMessages(query, { channelId } = {}) {
   const q = query.trim()
   if (!q) return []
-  const { data, error } = await supabase.rpc('search_slack_messages', { q, lim: 50 })
+  const { data, error } = await supabase.rpc('search_slack_messages', {
+    q,
+    lim: 50,
+    p_channel_id: channelId || null,
+  })
   if (error) throw new Error(error.message)
   return (data || []).map(m => ({
     channelId: m.channel_id,
