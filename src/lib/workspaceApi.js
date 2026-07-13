@@ -95,50 +95,42 @@ export async function loadWorkspaceFromSupabase() {
 }
 
 /**
- * Load all messages for one channel (paged under the hood past PostgREST 1000-row default).
+ * Load all messages for one channel via security-definer RPC (avoids RLS timeouts).
  */
 export async function loadChannelMessages(channelId) {
-  const pageSize = 1000
-  let from = 0
+  const pageSize = 500
+  let offset = 0
   const rows = []
 
   for (;;) {
-    const { data, error } = await supabase
-      .from('slack_messages')
-      .select('channel_id,channel_name,ts,thread_ts,user_id,display_name,avatar,text,subtype,reply_count,reactions,blocks,hidden,msg_ts')
-      .eq('channel_id', channelId)
-      .order('msg_ts', { ascending: true })
-      .range(from, from + pageSize - 1)
+    const { data, error } = await supabase.rpc('get_channel_messages', {
+      p_channel_id: channelId,
+      p_offset: offset,
+      p_limit: pageSize,
+    })
 
     if (error) throw new Error(error.message)
     const batch = data || []
     rows.push(...batch)
     if (batch.length < pageSize) break
-    from += pageSize
+    offset += pageSize
   }
 
-  const messages = []
-  for (const m of rows) {
-    if (m.hidden) continue
-    messages.push({
-      type: 'message',
-      ts: m.ts,
-      thread_ts: m.thread_ts || undefined,
-      user: m.user_id || undefined,
-      text: m.text || '',
-      subtype: m.subtype || undefined,
-      reply_count: m.reply_count || 0,
-      reactions: m.reactions || [],
-      blocks: m.blocks || undefined,
-      channel: m.channel_id,
-      channelName: m.channel_name,
-      displayName: m.display_name,
-      avatar: m.avatar || '',
-      timestamp: m.msg_ts,
-    })
-  }
-
-  return messages
+  return rows.map(m => ({
+    type: 'message',
+    ts: m.ts,
+    thread_ts: m.thread_ts || undefined,
+    user: m.user_id || undefined,
+    text: m.text || '',
+    subtype: m.subtype || undefined,
+    reply_count: m.reply_count || 0,
+    reactions: m.reactions || [],
+    channel: m.channel_id,
+    channelName: m.channel_name,
+    displayName: m.display_name,
+    avatar: m.avatar || '',
+    timestamp: m.msg_ts,
+  }))
 }
 
 export async function searchMessages(query) {
