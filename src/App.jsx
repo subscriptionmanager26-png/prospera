@@ -363,25 +363,14 @@ export default function App() {
         )}
 
         {view === 'search' && (
-          <>
-            <div className="mobile-search-bar">
-              <input
-                type="search"
-                className="top-search-input"
-                placeholder="Search all messages…"
-                value={globalSearch}
-                onChange={(e) => setGlobalSearch(e.target.value)}
-                autoFocus
-              />
-            </div>
-            <SearchPanel
-              results={searchResults}
-              query={globalSearch}
-              userMap={workspace.userMap}
-              onOpenMessage={openSearchResult}
-              loading={searchLoading}
-            />
-          </>
+          <SearchPanel
+            results={searchResults}
+            query={globalSearch}
+            onQueryChange={setGlobalSearch}
+            userMap={workspace.userMap}
+            onOpenMessage={openSearchResult}
+            loading={searchLoading}
+          />
         )}
 
         {view === 'profile' && (

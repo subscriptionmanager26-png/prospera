@@ -749,6 +749,38 @@ button, input { font: inherit; }
   overflow: auto;
   flex: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.search-panel-toolbar {
+  display: none; /* desktop uses the top search bar */
+  flex-shrink: 0;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.search-panel-input {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--main);
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.search-panel-input:focus {
+  outline: none;
+  border-color: var(--link);
+}
+
+.search-panel-input::placeholder {
+  color: var(--text-muted);
 }
 
 .panel-header {
@@ -769,7 +801,8 @@ button, input { font: inherit; }
 .search-results {
   list-style: none;
   margin: 0;
-  padding: 8px 0;
+  padding: 8px 0 24px;
+  flex: 1;
 }
 
 .search-result {
@@ -1016,10 +1049,6 @@ button, input { font: inherit; }
 
 .mobile-search-bar {
   display: none;
-  flex-shrink: 0;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
 }
 
 @media (max-width: 900px) {
@@ -1049,8 +1078,9 @@ button, input { font: inherit; }
     box-sizing: border-box;
   }
 
-  .mobile-search-bar {
-    display: block;
+  /* On mobile, search input lives inside the Search tab */
+  .search-panel-toolbar {
+    display: block !important;
   }
 
   .stat-grid { grid-template-columns: repeat(2, 1fr); }
