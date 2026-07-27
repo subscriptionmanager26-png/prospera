@@ -380,7 +380,7 @@ begin
         select sum(coalesce((r->>'count')::int, 0))
         from jsonb_array_elements(coalesce(m.reactions, '[]'::jsonb)) r
       ), 0)::int as reaction_score,
-      (regexp_matches(m.text, 'https?://[^\s<>\]\|]+', 'gi'))[1] as url
+      (regexp_matches(m.text, 'https?://[^\s<>\]\|]+', 'gi'))[1] as raw_url
     from public.slack_messages m
     join public.slack_channels c on c.id = m.channel_id
     where m.channel_id = p_channel_id
@@ -390,27 +390,33 @@ begin
   ),
   cleaned as (
     select
-      msgs.*,
-      regexp_replace(url, '[\)\]>,.]+$', '') as clean_url
+      msgs.channel_id,
+      msgs.channel_name,
+      msgs.ts,
+      msgs.display_name,
+      msgs.msg_ts,
+      msgs.text,
+      msgs.reaction_score,
+      regexp_replace(msgs.raw_url, '[\)\]>,.]+$', '') as clean_url
     from msgs
-    where url is not null
+    where msgs.raw_url is not null
   ),
   ranked as (
-    select distinct on (clean_url)
+    select distinct on (cleaned.clean_url)
       cleaned.channel_id,
       cleaned.channel_name,
       cleaned.ts,
       cleaned.display_name,
       cleaned.msg_ts,
-      cleaned.clean_url as url,
+      cleaned.clean_url,
       coalesce(
         nullif(substring(cleaned.clean_url from 'https?://(?:www\.)?([^/]+)'), ''),
         cleaned.clean_url
-      ) as title,
-      left(regexp_replace(cleaned.text, 'https?://\S+', '', 'g'), 180) as snippet,
+      ) as link_title,
+      left(regexp_replace(cleaned.text, 'https?://\S+', '', 'g'), 180) as link_snippet,
       cleaned.reaction_score
     from cleaned
-    order by clean_url, cleaned.reaction_score desc, cleaned.msg_ts desc
+    order by cleaned.clean_url, cleaned.reaction_score desc, cleaned.msg_ts desc
   )
   select
     ranked.channel_id,
@@ -418,9 +424,9 @@ begin
     ranked.ts,
     ranked.display_name,
     ranked.msg_ts,
-    ranked.url,
-    ranked.title,
-    ranked.snippet,
+    ranked.clean_url,
+    ranked.link_title,
+    ranked.link_snippet,
     ranked.reaction_score
   from ranked
   order by ranked.reaction_score desc, ranked.msg_ts desc
