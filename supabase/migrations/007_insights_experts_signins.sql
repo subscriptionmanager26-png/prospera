@@ -90,8 +90,8 @@ begin
   end if;
 
   cleaned := (
-    select coalesce(array_agg(distinct lower(trim(t))), '{}')
-    from unnest(coalesce(p_topics, '{}')) as t
+    select coalesce(array_agg(distinct lower(trim(t))), '{}'::text[])
+    from unnest(coalesce(p_topics, '{}'::text[])) as t
     where length(trim(t)) between 1 and 40
   );
 
