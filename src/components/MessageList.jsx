@@ -54,12 +54,17 @@ export default function MessageList({
     const el = listRef.current
     if (!el || !messages.length || didInitialScroll.current) return
     if (highlightTs) {
-      const node = el.querySelector(`[data-ts="${CSS.escape(highlightTs)}"]`)
+      const node = el.querySelector(`[data-ts="${CSS.escape(String(highlightTs))}"]`)
       if (node) {
         node.scrollIntoView({ block: 'center' })
         didInitialScroll.current = true
         return
       }
+      // Message may still be loading into the DOM, or lives only in a thread — don't jump to bottom
+      if (messages.some(m => String(m.ts) === String(highlightTs))) {
+        didInitialScroll.current = true
+      }
+      return
     }
     el.scrollTop = el.scrollHeight
     didInitialScroll.current = true

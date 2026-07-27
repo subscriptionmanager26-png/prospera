@@ -274,8 +274,9 @@ export default function App() {
   }, [openChannel])
 
   const openInsightMessage = useCallback((msg) => {
+    const around = Number(msg.msg_ts ?? msg.timestamp)
     openChannel(msg.channelId, {
-      aroundTs: msg.msg_ts ?? msg.timestamp,
+      aroundTs: Number.isFinite(around) ? around : null,
       ts: msg.ts,
       threadTs: msg.thread_ts && msg.thread_ts !== msg.ts ? msg.thread_ts : null,
     })

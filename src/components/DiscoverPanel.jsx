@@ -154,6 +154,8 @@ function InsightList({ items, empty, onOpen, showScore }) {
             onClick={() => onOpen?.({
               channelId: item.channel_id,
               ts: item.ts,
+              msg_ts: item.msg_ts,
+              timestamp: item.msg_ts,
               thread_ts: item.thread_ts,
             })}
           >
@@ -189,7 +191,12 @@ function RecList({ items, empty, onOpen }) {
             <button
               type="button"
               className="text-link-btn"
-              onClick={() => onOpen?.({ channelId: item.channel_id, ts: item.ts })}
+              onClick={() => onOpen?.({
+                channelId: item.channel_id,
+                ts: item.ts,
+                msg_ts: item.msg_ts,
+                timestamp: item.msg_ts,
+              })}
             >
               View in archive
             </button>
