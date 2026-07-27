@@ -1,6 +1,6 @@
 import { formatDateRange } from '../lib/slackExport'
 
-export default function ProfilePanel({ workspace, userEmail, onSignOut }) {
+export default function ProfilePanel({ workspace, userEmail, onSignOut, onOpenExperts }) {
   const { stats } = workspace
 
   return (
@@ -35,6 +35,12 @@ export default function ProfilePanel({ workspace, userEmail, onSignOut }) {
           <dd>{stats.dateRange ? formatDateRange(stats.dateRange) : '—'}</dd>
         </div>
       </dl>
+
+      {onOpenExperts && (
+        <button type="button" className="profile-secondary" onClick={onOpenExperts}>
+          Edit expert topics
+        </button>
+      )}
 
       {onSignOut && (
         <button type="button" className="profile-signout" onClick={onSignOut}>

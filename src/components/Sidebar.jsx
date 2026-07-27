@@ -37,6 +37,22 @@ export default function Sidebar({
           <span className="nav-icon">⌂</span>
           <span>Home</span>
         </button>
+        <button
+          type="button"
+          className={`nav-item ${view === 'discover' ? 'active' : ''}`}
+          onClick={() => onSelectView('discover')}
+        >
+          <span className="nav-icon">✦</span>
+          <span>Discover</span>
+        </button>
+        <button
+          type="button"
+          className={`nav-item ${view === 'experts' ? 'active' : ''}`}
+          onClick={() => onSelectView('experts')}
+        >
+          <span className="nav-icon">◎</span>
+          <span>Experts</span>
+        </button>
       </nav>
 
       <div className="sidebar-section">

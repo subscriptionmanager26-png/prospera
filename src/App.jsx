@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Sidebar from './components/Sidebar'
 import HomePanel from './components/HomePanel'
 import ChannelHeader from './components/ChannelHeader'
@@ -9,8 +9,11 @@ import LoginPanel from './components/LoginPanel'
 import MobileBottomNav from './components/MobileBottomNav'
 import ChannelsPanel from './components/ChannelsPanel'
 import ProfilePanel from './components/ProfilePanel'
+import DiscoverPanel from './components/DiscoverPanel'
+import ExpertsPanel from './components/ExpertsPanel'
 import { supabase } from './lib/supabase'
 import { loadWorkspaceFromSupabase, loadChannelMessages, searchMessages, CHANNEL_PAGE_SIZE } from './lib/workspaceApi'
+import { recordSignIn, detectSignInMethod } from './lib/communityApi'
 import './index.css'
 
 export default function App() {
@@ -31,6 +34,7 @@ export default function App() {
   const [highlightTs, setHighlightTs] = useState(null)
   const [channelSearchResults, setChannelSearchResults] = useState(null)
   const [channelSearchLoading, setChannelSearchLoading] = useState(false)
+  const signedInLogged = useRef(new Set())
 
   useEffect(() => {
     let mounted = true
@@ -43,10 +47,18 @@ export default function App() {
 
     const { data: sub } = supabase.auth.onAuthStateChange((event, next) => {
       setSession(next)
+      if (event === 'SIGNED_IN' && next?.user?.id) {
+        const key = `${next.user.id}:${next.access_token?.slice(-12) || ''}`
+        if (!signedInLogged.current.has(key)) {
+          signedInLogged.current.add(key)
+          recordSignIn(detectSignInMethod(next))
+        }
+      }
       if (event === 'SIGNED_OUT') {
         setWorkspace(null)
         setAccessDenied('')
         setError('')
+        signedInLogged.current.clear()
       }
     })
 
@@ -97,6 +109,13 @@ export default function App() {
   const handleSignedIn = useCallback((nextSession) => {
     setSession(nextSession)
     setAuthReady(true)
+    if (nextSession?.user?.id) {
+      const key = `${nextSession.user.id}:manual`
+      if (!signedInLogged.current.has(key)) {
+        signedInLogged.current.add(key)
+        recordSignIn(detectSignInMethod(nextSession))
+      }
+    }
   }, [])
 
   useEffect(() => {
@@ -248,7 +267,15 @@ export default function App() {
 
   const openSearchResult = useCallback((msg) => {
     openChannel(msg.channelId, {
-      aroundTs: msg.timestamp,
+      aroundTs: msg.timestamp ?? msg.msg_ts,
+      ts: msg.ts,
+      threadTs: msg.thread_ts && msg.thread_ts !== msg.ts ? msg.thread_ts : null,
+    })
+  }, [openChannel])
+
+  const openInsightMessage = useCallback((msg) => {
+    openChannel(msg.channelId, {
+      aroundTs: msg.msg_ts ?? msg.timestamp,
       ts: msg.ts,
       threadTs: msg.thread_ts && msg.thread_ts !== msg.ts ? msg.thread_ts : null,
     })
@@ -265,7 +292,11 @@ export default function App() {
     setAccessDenied('')
   }
 
-  const mobileTab = view === 'channel' ? 'channels' : view
+  const mobileTab = ['channel', 'channels'].includes(view)
+    ? 'channels'
+    : ['discover', 'experts'].includes(view)
+      ? 'discover'
+      : view
 
   const onMobileTab = (tab) => {
     if (tab === 'search') {
@@ -274,6 +305,11 @@ export default function App() {
     }
     if (tab === 'channels') {
       setView('channels')
+      setActiveThreadTs(null)
+      return
+    }
+    if (tab === 'discover') {
+      setView('discover')
       setActiveThreadTs(null)
       return
     }
@@ -354,6 +390,17 @@ export default function App() {
           <HomePanel workspace={workspace} onOpenChannel={openChannel} />
         )}
 
+        {view === 'discover' && (
+          <DiscoverPanel onOpenMessage={openInsightMessage} onOpenChannel={openChannel} />
+        )}
+
+        {view === 'experts' && (
+          <ExpertsPanel
+            userEmail={session.user.email}
+            sessionName={session.user.user_metadata?.full_name || session.user.user_metadata?.name || ''}
+          />
+        )}
+
         {view === 'channels' && (
           <ChannelsPanel
             conversations={workspace.conversations}
@@ -378,6 +425,7 @@ export default function App() {
             workspace={workspace}
             userEmail={session.user.email}
             onSignOut={signOut}
+            onOpenExperts={() => setView('experts')}
           />
         )}
 

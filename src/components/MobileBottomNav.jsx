@@ -1,6 +1,7 @@
 export default function MobileBottomNav({ activeTab, onSelect }) {
   const tabs = [
     { id: 'home', label: 'Home', icon: '⌂' },
+    { id: 'discover', label: 'Discover', icon: '✦' },
     { id: 'channels', label: 'Channels', icon: '#' },
     { id: 'search', label: 'Search', icon: '⌕' },
     { id: 'profile', label: 'Profile', icon: '◎' },
